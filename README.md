@@ -8,6 +8,11 @@ the [Mistral Agents SDK](https://docs.mistral.ai/studio/agents/getting-started/q
 Give it Commission decisions, court judgments, or authority decisions to
 summarise, and ask it competition-law and competition-economics questions.
 
+The agent has live web research (`web_search` connector: search + open URL)
+and a networked Mistral sandbox (shell + Python) to download and parse PDFs
+(e.g. from EUR-Lex, CURIA or competition-policy.ec.europa.eu) and to read
+files uploaded in chat.
+
 ## Run locally
 
 ```bash
