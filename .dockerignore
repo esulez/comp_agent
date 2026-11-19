@@ -1,0 +1,8 @@
+.env
+.venv/
+.uv/
+.git/
+__pycache__/
+*.py[oc]
+build/
+dist/

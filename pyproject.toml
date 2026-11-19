@@ -1,0 +1,12 @@
+[project]
+name = "competition-agent"
+version = "0.1.0"
+description = "Competition economist and lawyer agent (EU competition law focus), built with the Mistral Agents SDK"
+requires-python = ">=3.12"
+dependencies = ["mistralai-agents>=1.1.2,<1.2"]
+
+[tool.uv]
+package = false
+
+[tool.mistralai.agents]
+entrypoint = "main:agent"
