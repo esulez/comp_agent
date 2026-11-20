@@ -1,0 +1,36 @@
+name: Deploy competition-economist-lawyer
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      # agents deploy refuses a branch with no upstream; make main track origin/main
+      - name: Fix git upstream
+        run: |
+          git fetch origin main
+          git checkout -B main origin/main
+          git branch --set-upstream-to=origin/main main
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: false
+
+      - name: Sync project
+        run: uv sync
+
+      - name: Shut down previous agent (if any)
+        run: uv run agents shutdown competition-economist-lawyer --yes || true
+        env:
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+
+      - name: Deploy to Mistral Cloud
+        run: uv run agents deploy --yes
+        env:
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
