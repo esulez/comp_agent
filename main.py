@@ -1,3 +1,6 @@
+import os
+
+import httpx
 from mistralai import agents
 
 INSTRUCTIONS = """You are a competition economist and competition lawyer in one person: an expert in industrial organisation (IO) economics and in competition law, with a primary focus on European Union competition law.
@@ -17,9 +20,9 @@ INSTRUCTIONS = """You are a competition economist and competition lawyer in one 
 
 ## Live research and documents
 
-- You have a `web_search` connector (tools: `web_search`, `open_url`, `news_search`) and a networked Linux sandbox (shell + Python) for fetching and parsing documents. Use them for live research.
-- When the user asks for current information, recent cases or decisions, or gives a reference (case number C-.../..., COMP/M.XXXX merger case, CELEX number, OJ citation), search the web and open the primary source: prefer EUR-Lex (eur-lex.europa.eu), CURIA (curia.europa.eu) and the Commission's competition site (competition-policy.ec.europa.eu), then reputable secondary sources.
-- `open_url` returns full page text. For PDFs (many decisions are PDF-only): download the file in the sandbox (e.g. `curl -L -o decision.pdf <url>`), install `pypdf` if needed (`pip install pypdf`), extract the text with Python, and read it. Files the user uploads in the chat are in the sandbox workspace: read them there the same way.
+- You have a `web_search` tool that returns a short answer plus cited sources (title + URL), and a networked Linux sandbox (shell + Python) for fetching and parsing documents. Use both for live research.
+- When the user asks for current information, recent cases or decisions, or gives a reference (case number C-.../..., COMP/M.XXXX merger case, CELEX number, OJ citation), call `web_search`, then open the primary source: prefer EUR-Lex (eur-lex.europa.eu), CURIA (curia.europa.eu) and the Commission's competition site (competition-policy.ec.europa.eu), then reputable secondary sources.
+- To read a page or PDF, use the sandbox: `curl -L -o page.html <url>` (or `decision.pdf <url>`), convert HTML to text with Python if needed, and for PDFs install `pypdf` if missing (`pip install pypdf`) and extract the text. Files the user uploads in the chat are in the sandbox workspace: read them there the same way.
 - Ground every summary in the retrieved document: cite it, give the source URL and the access date, and state explicitly what comes from the document versus your general knowledge. If a page or PDF cannot be opened or parsed, say so; never fabricate content.
 - When you find it, note the publication and appeal status of a decision (pending appeal, settled, annulled).
 
@@ -31,11 +34,50 @@ INSTRUCTIONS = """You are a competition economist and competition lawyer in one 
 - When helpful, end a summary with a one-line "Key takeaway".
 - You provide expert information and analysis, not legal advice."""
 
+def _mistral_api_token() -> str:
+    token_path = os.environ.get("MISTRAL_SA_TOKEN_PATH")
+    if token_path and os.path.exists(token_path):
+        with open(token_path, encoding="utf-8") as fh:
+            return fh.read().strip()
+    return os.environ.get("MISTRAL_API_KEY", "").strip()
+
+
+@agents.tool
+async def web_search(query: str, limit: int = 10) -> dict[str, object]:
+    """Search the web for current, up-to-date information. Returns a short answer plus cited sources (title and URL). Use it for recent cases, decisions, news, statistics, and any fact you are not certain about."""
+    token = _mistral_api_token()
+    if not token:
+        raise agents.ToolError("No Mistral credential available for web search.")
+    async with httpx.AsyncClient(timeout=90.0, follow_redirects=True) as client:
+        resp = await client.post(
+            "https://api.mistral.ai/v1/conversations",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json={
+                "model": "mistral-large-4",
+                "tools": [{"type": "web_search"}],
+                "inputs": query,
+                "store": False,
+                "instructions": "Always call web_search. Answer concisely with the key facts; the sources are returned as tool references.",
+            },
+        )
+    if resp.status_code != 200:
+        raise agents.ToolError(f"web_search failed: HTTP {resp.status_code}: {resp.text[:300]}")
+    answer_parts: list[str] = []
+    sources: dict[str, dict[str, str]] = {}
+    for entry in resp.json().get("outputs", []):
+        for chunk in entry.get("content") or []:
+            if chunk.get("type") == "text":
+                answer_parts.append(chunk.get("text", ""))
+            elif chunk.get("type") == "tool_reference" and chunk.get("url"):
+                sources[chunk["url"]] = {"title": chunk.get("title") or chunk["url"], "url": chunk["url"]}
+    return {"answer": "\n".join(answer_parts).strip(), "sources": list(sources.values())[: max(1, limit)]}
+
+
 agent = agents.Agent(
     model="mistral-large-4",
     name="competition-economist-lawyer",
     instructions=INSTRUCTIONS,
     reasoning_effort="high",
-    connectors=[agents.connector("web_search")],
+    tools=[web_search],
     environment=agents.MistralSandbox(network=agents.Network.all()),
 )
