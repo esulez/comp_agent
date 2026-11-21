@@ -1,4 +1,4 @@
-name: Deploy competition-economist-lawyer
+name: Deploy competition-agent
 
 on:
   workflow_dispatch:
@@ -25,12 +25,14 @@ jobs:
       - name: Sync project
         run: uv sync
 
-      - name: Shut down previous agent (if any)
-        run: uv run agents shutdown competition-economist-lawyer --yes || true
+      - name: Shut down previous deployment (if any)
+        run: uv run agents shutdown competition-agent --yes || true
         env:
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
 
+      # GITHUB_MEMORY_TOKEN is a *Mistral workspace secret* referenced by name only;
+      # its value never passes through GitHub Actions or the repo.
       - name: Deploy to Mistral Cloud
-        run: uv run agents deploy --yes
+        run: uv run agents deploy --name competition-agent --yes --secret-binding GITHUB_MEMORY_TOKEN=secret:workspace:GITHUB_MEMORY_TOKEN
         env:
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
